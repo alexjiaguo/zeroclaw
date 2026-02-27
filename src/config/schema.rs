@@ -4833,6 +4833,123 @@ async fn sync_directory(path: &Path) -> Result<()> {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct SyscallAnomalyConfig {
+    /// Enable syscall anomaly detection.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Treat denied syscall lines as anomalies even when syscall is in baseline.
+    #[serde(default)]
+    pub strict_mode: bool,
+
+    /// Emit anomaly alerts when a syscall appears outside the expected baseline.
+    #[serde(default = "default_true")]
+    pub alert_on_unknown_syscall: bool,
+
+    /// Allowed denied-syscall events per rolling minute before triggering an alert.
+    #[serde(default = "default_syscall_anomaly_max_denied_events_per_minute")]
+    pub max_denied_events_per_minute: u32,
+
+    /// Allowed total syscall telemetry events per rolling minute before triggering an alert.
+    #[serde(default = "default_syscall_anomaly_max_total_events_per_minute")]
+    pub max_total_events_per_minute: u32,
+
+    /// Maximum anomaly alerts emitted per rolling minute (global guardrail).
+    #[serde(default = "default_syscall_anomaly_max_alerts_per_minute")]
+    pub max_alerts_per_minute: u32,
+
+    /// Cooldown between identical anomaly alerts (seconds).
+    #[serde(default = "default_syscall_anomaly_alert_cooldown_secs")]
+    pub alert_cooldown_secs: u64,
+
+    /// Path to syscall anomaly log file (relative to ~/.zeroclaw unless absolute).
+    #[serde(default = "default_syscall_anomaly_log_path")]
+    pub log_path: String,
+
+    /// Expected syscall baseline. Unknown syscall names trigger anomaly when enabled.
+    #[serde(default = "default_syscall_anomaly_baseline_syscalls")]
+    pub baseline_syscalls: Vec<String>,
+}
+
+impl Default for SyscallAnomalyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            strict_mode: false,
+            alert_on_unknown_syscall: true,
+            max_denied_events_per_minute: 5,
+            max_total_events_per_minute: 120,
+            max_alerts_per_minute: 30,
+            alert_cooldown_secs: 20,
+            log_path: "syscall-anomalies.log".to_string(),
+            baseline_syscalls: vec![
+                "read".to_string(),
+                "write".to_string(),
+                "open".to_string(),
+                "openat".to_string(),
+                "close".to_string(),
+                "stat".to_string(),
+                "fstat".to_string(),
+                "newfstatat".to_string(),
+                "lseek".to_string(),
+                "mmap".to_string(),
+                "mprotect".to_string(),
+                "munmap".to_string(),
+                "brk".to_string(),
+                "rt_sigaction".to_string(),
+                "rt_sigprocmask".to_string(),
+                "ioctl".to_string(),
+                "fcntl".to_string(),
+                "access".to_string(),
+                "pipe2".to_string(),
+                "dup".to_string(),
+                "dup2".to_string(),
+                "dup3".to_string(),
+                "epoll_create1".to_string(),
+                "epoll_ctl".to_string(),
+                "epoll_wait".to_string(),
+                "poll".to_string(),
+                "ppoll".to_string(),
+                "select".to_string(),
+                "futex".to_string(),
+                "clock_gettime".to_string(),
+                "nanosleep".to_string(),
+                "getpid".to_string(),
+                "gettid".to_string(),
+                "set_tid_address".to_string(),
+                "set_robust_list".to_string(),
+                "clone".to_string(),
+                "clone3".to_string(),
+                "fork".to_string(),
+                "execve".to_string(),
+                "wait4".to_string(),
+                "exit".to_string(),
+                "exit_group".to_string(),
+            ],
+        }
+    }
+}
+
+fn default_syscall_anomaly_max_denied_events_per_minute() -> u32 {
+    5
+}
+fn default_syscall_anomaly_max_total_events_per_minute() -> u32 {
+    120
+}
+fn default_syscall_anomaly_max_alerts_per_minute() -> u32 {
+    30
+}
+fn default_syscall_anomaly_alert_cooldown_secs() -> u64 {
+    20
+}
+fn default_syscall_anomaly_log_path() -> String {
+    "syscall-anomalies.log".to_string()
+}
+fn default_syscall_anomaly_baseline_syscalls() -> Vec<String> {
+    SyscallAnomalyConfig::default().baseline_syscalls
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

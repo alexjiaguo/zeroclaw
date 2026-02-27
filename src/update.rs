@@ -298,7 +298,9 @@ pub async fn self_update(force: bool, check_only: bool) -> Result<()> {
     println!("Downloading: {}", asset.name);
 
     // Create temp directory
-    let temp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
+    let temp_dir = tempfile::Builder::new()
+        .tempdir()
+        .context("Failed to create temp directory")?;
 
     // Download and extract
     let new_binary = download_binary(asset, temp_dir.path()).await?;

@@ -1,8 +1,8 @@
 use super::traits::{Tool, ToolResult};
 use crate::runtime::RuntimeAdapter;
 use crate::security::is_valid_env_var_name;
+use crate::security::syscall_anomaly::SyscallAnomalyDetector;
 use crate::security::SecurityPolicy;
-use crate::security::SyscallAnomalyDetector;
 use async_trait::async_trait;
 use serde_json::json;
 use std::collections::HashSet;
@@ -219,7 +219,7 @@ impl Tool for ShellTool {
                 }
 
                 if let Some(detector) = &self.syscall_detector {
-                    let _ = detector.inspect_command_output(
+                    detector.inspect_command_output(
                         &command,
                         &stdout,
                         &stderr,

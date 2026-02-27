@@ -51,8 +51,8 @@ pub mod schedule;
 pub mod schema;
 pub mod screenshot;
 pub mod shell;
-pub mod traits;
 pub mod task_plan;
+pub mod traits;
 pub mod web_fetch;
 pub mod web_search_tool;
 
@@ -293,10 +293,13 @@ pub fn all_tools_with_runtime(
     // Web search tool (enabled by default for GLM and other models)
     if root_config.web_search.enabled {
         tool_arcs.push(Arc::new(WebSearchTool::new(
+            Arc::clone(security),
             root_config.web_search.provider.clone(),
             root_config.web_search.brave_api_key.clone(),
+            None,
             root_config.web_search.max_results,
             root_config.web_search.timeout_secs,
+            format!("zeroclaw/{}", env!("CARGO_PKG_VERSION")),
         )));
     }
 

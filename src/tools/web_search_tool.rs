@@ -175,7 +175,6 @@ impl WebSearchTool {
         Ok(lines.join("\n"))
     }
 
-    #[cfg(feature = "firecrawl")]
     async fn search_firecrawl(&self, query: &str) -> anyhow::Result<String> {
         let auth_token = match self.api_key.as_ref() {
             Some(raw) if !raw.trim().is_empty() => raw.trim(),
@@ -270,12 +269,6 @@ impl WebSearchTool {
         }
 
         Ok(lines.join("\n"))
-    }
-
-    #[cfg(not(feature = "firecrawl"))]
-    #[allow(clippy::unused_async)]
-    async fn search_firecrawl(&self, _query: &str) -> anyhow::Result<String> {
-        anyhow::bail!("web_search provider 'firecrawl' requires Cargo feature 'firecrawl'")
     }
 }
 

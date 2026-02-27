@@ -1,12 +1,10 @@
 pub mod docker;
 pub mod native;
 pub mod traits;
-pub mod wasm;
 
 pub use docker::DockerRuntime;
 pub use native::NativeRuntime;
 pub use traits::RuntimeAdapter;
-pub use wasm::{WasmCapabilities, WasmRuntime};
 
 use crate::config::RuntimeConfig;
 
@@ -15,7 +13,6 @@ pub fn create_runtime(config: &RuntimeConfig) -> anyhow::Result<Box<dyn RuntimeA
     match config.kind.as_str() {
         "native" => Ok(Box::new(NativeRuntime::new())),
         "docker" => Ok(Box::new(DockerRuntime::new(config.docker.clone()))),
-        "wasm" => Ok(Box::new(WasmRuntime::new(config.wasm.clone()))),
         "cloudflare" => anyhow::bail!(
             "runtime.kind='cloudflare' is not implemented yet. Use runtime.kind='native' for now."
         ),

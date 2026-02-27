@@ -37,6 +37,7 @@ pub mod pairing;
 pub mod policy;
 pub mod prompt_guard;
 pub mod secrets;
+pub mod syscall_anomaly;
 pub mod traits;
 
 #[allow(unused_imports)]

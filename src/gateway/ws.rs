@@ -203,6 +203,12 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             "model": state.model,
         }));
 
+        // Get agent config for multimodal and max iterations
+        let (multimodal_config, max_tool_iterations) = {
+            let cfg = state.config.lock();
+            (cfg.multimodal.clone(), cfg.agent.max_tool_iterations)
+        };
+
         // Run the agent loop with tool execution
         let result = run_tool_call_loop(
             state.provider.as_ref(),
@@ -215,8 +221,8 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             true, // silent - no console output
             Some(&approval_manager),
             "webchat",
-            &state.multimodal,
-            state.max_tool_iterations,
+            &multimodal_config,
+            max_tool_iterations,
             None, // cancellation token
             None, // delta streaming
             None, // hooks
