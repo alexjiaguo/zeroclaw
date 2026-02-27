@@ -1,0 +1,9 @@
+#!/usr/bin/expect -f
+set timeout 600
+spawn ssh -o StrictHostKeyChecking=no root@45.32.40.33
+expect "password:"
+send "u4C=Evnr_4ajj4Vo\r"
+expect "# "
+send "find / -maxdepth 3 -name zeroclaw -type d 2>/dev/null\r"
+expect "# "
+send "exit\r"

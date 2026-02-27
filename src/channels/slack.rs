@@ -1,9 +1,9 @@
 use super::traits::{Channel, ChannelMessage, SendMessage};
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// Slack channel — polls conversations.history via Web API
+/// Slack channel — polls conversations.history AND conversations.replies via Web API
 pub struct SlackChannel {
     bot_token: String,
     channel_id: Option<String>,
@@ -231,6 +231,11 @@ impl Channel for SlackChannel {
         let mut last_discovery = Instant::now();
         let mut last_ts_by_channel: HashMap<String, String> = HashMap::new();
 
+        // Track active threads: (channel_id, thread_ts) -> last_seen_reply_ts
+        // When we see a message with thread_ts from conversations.history, or
+        // when we see any top-level message (potential thread parent), we add it.
+        let mut active_threads: HashMap<(String, String), String> = HashMap::new();
+
         if let Some(ref channel_id) = scoped_channel {
             tracing::info!("Slack channel listening on #{channel_id}...");
         } else {
@@ -357,6 +362,12 @@ impl Channel for SlackChannel {
 
                         last_ts_by_channel.insert(channel_id.clone(), ts.to_string());
 
+                        // Track this message's ts as a potential thread parent.
+                        // Users may later click "Reply in Thread" on it.
+                        active_threads
+                            .entry((channel_id.clone(), ts.to_string()))
+                            .or_insert_with(|| ts.to_string());
+
                         let channel_msg = ChannelMessage {
                             id: format!("slack_{channel_id}_{ts}"),
                             sender: user.to_string(),
@@ -376,6 +387,123 @@ impl Channel for SlackChannel {
                     }
                 }
             }
+
+            // ── Poll active threads for replies ───────────────────────
+            // conversations.history only returns top-level messages.
+            // Thread replies are only visible via conversations.replies.
+            let thread_keys: Vec<(String, String)> = active_threads.keys().cloned().collect();
+            for (thread_channel, thread_ts) in &thread_keys {
+                let last_reply_ts = active_threads
+                    .get(&(thread_channel.clone(), thread_ts.clone()))
+                    .cloned()
+                    .unwrap_or_default();
+
+                let reply_params = vec![
+                    ("channel", thread_channel.clone()),
+                    ("ts", thread_ts.clone()),
+                    ("limit", "20".to_string()),
+                    ("oldest", last_reply_ts),
+                ];
+
+                let reply_resp = match self
+                    .http_client()
+                    .get("https://slack.com/api/conversations.replies")
+                    .bearer_auth(&self.bot_token)
+                    .query(&reply_params)
+                    .send()
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::debug!(
+                            "Slack thread poll error for {thread_channel}/{thread_ts}: {e}"
+                        );
+                        continue;
+                    }
+                };
+
+                let reply_data: serde_json::Value = match reply_resp.json().await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::debug!(
+                            "Slack thread parse error for {thread_channel}/{thread_ts}: {e}"
+                        );
+                        continue;
+                    }
+                };
+
+                if reply_data.get("ok") != Some(&serde_json::Value::Bool(true)) {
+                    continue;
+                }
+
+                if let Some(replies) = reply_data.get("messages").and_then(|m| m.as_array()) {
+                    for reply in replies {
+                        let rts = reply.get("ts").and_then(|t| t.as_str()).unwrap_or("");
+                        let ruser = reply
+                            .get("user")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("unknown");
+                        let rtext = reply.get("text").and_then(|t| t.as_str()).unwrap_or("");
+
+                        // Skip the thread parent itself (first message in replies)
+                        if rts == thread_ts.as_str() {
+                            continue;
+                        }
+
+                        // Skip bot's own replies
+                        if ruser == bot_user_id {
+                            continue;
+                        }
+
+                        // Skip unauthorized users
+                        if !self.is_user_allowed(ruser) {
+                            continue;
+                        }
+
+                        // Skip empty or already-seen replies
+                        let cur_last = active_threads
+                            .get(&(thread_channel.clone(), thread_ts.clone()))
+                            .cloned()
+                            .unwrap_or_default();
+                        if rtext.is_empty() || rts <= cur_last.as_str() {
+                            continue;
+                        }
+
+                        // Update the last-seen reply ts for this thread
+                        active_threads
+                            .insert((thread_channel.clone(), thread_ts.clone()), rts.to_string());
+
+                        let channel_msg = ChannelMessage {
+                            id: format!("slack_{thread_channel}_{rts}"),
+                            sender: ruser.to_string(),
+                            reply_target: thread_channel.clone(),
+                            content: rtext.to_string(),
+                            channel: "slack".to_string(),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                            thread_ts: Some(thread_ts.clone()),
+                        };
+
+                        if tx.send(channel_msg).await.is_err() {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
+            // Prune stale threads (older than 1 hour) to prevent unbounded growth
+            let now_secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64();
+            active_threads.retain(|(_ch, parent_ts), _| {
+                parent_ts
+                    .parse::<f64>()
+                    .map(|ts| now_secs - ts < 3600.0)
+                    .unwrap_or(false)
+            });
         }
     }
 
