@@ -3164,6 +3164,24 @@ pub async fn start_channels(config: Config) -> Result<()> {
             "Delegate a subtask to a specialized agent. Use when: a task benefits from a different model (e.g. fast summarization, deep reasoning, code generation). The sub-agent runs a single prompt and returns its response.",
         ));
     }
+    if config.web_search.enabled {
+        tool_descs.push((
+            "web_search_tool",
+            "Search the web for current information, news, prices, weather, or any live data. Use when: the user asks about current events, real-time data (stock prices, crypto prices, weather), recent news, or anything requiring up-to-date internet information. Always prefer this over saying you can't access the internet.",
+        ));
+    }
+    if config.web_fetch.enabled {
+        tool_descs.push((
+            "web_fetch",
+            "Fetch and extract readable content from a specific URL. Use when: you need to read the contents of a specific webpage, article, or documentation page.",
+        ));
+    }
+    if config.http_request.enabled {
+        tool_descs.push((
+            "http_request",
+            "Make HTTP requests (GET, POST, PUT, DELETE) to APIs. Use when: you need to call a REST API, fetch JSON data, or interact with web services.",
+        ));
+    }
 
     // Filter out tools excluded for non-CLI channels so the system prompt
     // does not advertise them for channel-driven runs.
