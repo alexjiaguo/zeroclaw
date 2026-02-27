@@ -50,8 +50,10 @@ impl SlackChannel {
 
     /// Resolve the thread identifier for inbound Slack messages.
     /// Replies carry `thread_ts` (root thread id); top-level messages only have `ts`.
+    /// For top-level messages we use `ts` itself so the bot's reply creates a thread.
     fn inbound_thread_ts(msg: &serde_json::Value) -> Option<String> {
         msg.get("thread_ts")
+            .or_else(|| msg.get("ts"))
             .and_then(|t| t.as_str())
             .map(str::to_string)
     }
@@ -671,13 +673,13 @@ mod tests {
     }
 
     #[test]
-    fn inbound_thread_ts_none_when_no_thread_ts() {
+    fn inbound_thread_ts_falls_back_to_ts() {
         let msg = serde_json::json!({
             "ts": "123.001"
         });
 
         let thread_ts = SlackChannel::inbound_thread_ts(&msg);
-        assert_eq!(thread_ts, None);
+        assert_eq!(thread_ts.as_deref(), Some("123.001"));
     }
 
     #[test]
