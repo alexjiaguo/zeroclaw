@@ -237,6 +237,8 @@ impl Channel for SlackChannel {
         // When we see a message with thread_ts from conversations.history, or
         // when we see any top-level message (potential thread parent), we add it.
         let mut active_threads: HashMap<(String, String), String> = HashMap::new();
+        // Whether we've done the initial thread discovery scan for each channel
+        let mut thread_discovery_done: HashMap<String, bool> = HashMap::new();
 
         if let Some(ref channel_id) = scoped_channel {
             tracing::info!("Slack channel listening on #{channel_id}...");
@@ -291,6 +293,53 @@ impl Channel for SlackChannel {
                         channel_id,
                         cursor_ts
                     );
+                }
+
+                // ── Thread discovery on startup ──────────────────────────
+                // After restart, active_threads is empty. Scan recent history
+                // to re-discover threads that may have pending follow-ups.
+                if !thread_discovery_done.contains_key(&channel_id) {
+                    thread_discovery_done.insert(channel_id.clone(), true);
+
+                    let disc_params =
+                        vec![("channel", channel_id.clone()), ("limit", "20".to_string())];
+                    if let Ok(disc_resp) = self
+                        .http_client()
+                        .get("https://slack.com/api/conversations.history")
+                        .bearer_auth(&self.bot_token)
+                        .query(&disc_params)
+                        .send()
+                        .await
+                    {
+                        if let Ok(disc_data) = disc_resp.json::<serde_json::Value>().await {
+                            if let Some(msgs) = disc_data.get("messages").and_then(|m| m.as_array())
+                            {
+                                for msg in msgs {
+                                    let msg_ts =
+                                        msg.get("ts").and_then(|t| t.as_str()).unwrap_or("");
+                                    let reply_count = msg
+                                        .get("reply_count")
+                                        .and_then(|r| r.as_u64())
+                                        .unwrap_or(0);
+                                    let latest_reply = msg
+                                        .get("latest_reply")
+                                        .and_then(|r| r.as_str())
+                                        .unwrap_or(msg_ts);
+
+                                    if reply_count > 0 && !msg_ts.is_empty() {
+                                        active_threads
+                                            .entry((channel_id.clone(), msg_ts.to_string()))
+                                            .or_insert_with(|| latest_reply.to_string());
+                                    }
+                                }
+                                tracing::info!(
+                                    "Slack: thread discovery for {}: found {} active thread(s)",
+                                    channel_id,
+                                    active_threads.len()
+                                );
+                            }
+                        }
+                    }
                 }
                 let params = vec![
                     ("channel", channel_id.clone()),
